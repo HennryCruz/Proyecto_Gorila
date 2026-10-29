@@ -96,7 +96,7 @@ section{min-height:100svh;display:flex;flex-direction:column;align-items:center;
     <h1 class="script">Es solo para ti</h1>
     <p>Escribe la fecha en que nos hicimos novios<br><small style="opacity:.7">(día, mes y año)</small></p>
     <form id="f" autocomplete="off">
-      <input id="pw" inputmode="numeric" placeholder="DD / MM / AAAA" aria-label="Fecha" required>
+      <input id="pw" inputmode="numeric" placeholder="DD/MM/AAAA" maxlength="10" aria-label="Fecha" required>
       <button class="btn" id="go" type="submit">Abrir 💖</button>
     </form>
     <div id="err" role="alert"></div>
@@ -130,6 +130,16 @@ async function deriveKey(pw,salt){
  return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:ITER,hash:'SHA-256'},b,{name:'AES-GCM',length:256},false,['decrypt']);
 }
 const dec=(k,u)=>crypto.subtle.decrypt({name:'AES-GCM',iv:u.slice(0,12)},k,u.slice(12));
+
+$('#pw').addEventListener('input',e=>{
+ const del=e.inputType&&e.inputType.startsWith('delete');
+ const d=e.target.value.replace(/\D/g,'').slice(0,8);
+ let o=d.slice(0,2);
+ if(d.length>2)o+='/'+d.slice(2,4);
+ if(d.length>4)o+='/'+d.slice(4);
+ if(!del&&(d.length===2||d.length===4))o+='/';
+ e.target.value=o;
+});
 
 $('#f').addEventListener('submit',async e=>{
  e.preventDefault();
@@ -170,35 +180,42 @@ function fmt(s){const [yy,mm,dd]=s.split('-').map(Number);return dd+' de '+MES[m
 function makeAudio(){try{const AC=window.AudioContext||window.webkitAudioContext;const c=new AC();if(c.resume)c.resume();return c}catch(e){return null}}
 function startMusic(c){
  if(!c)return;
- const master=c.createGain();master.gain.value=.55;
- const dl=c.createDelay(1);dl.delayTime.value=.36;
- const fb=c.createGain();fb.gain.value=.4;
- const wet=c.createGain();wet.gain.value=.32;
- master.connect(c.destination);master.connect(dl);dl.connect(fb);fb.connect(dl);dl.connect(wet);wet.connect(c.destination);
- const f=s=>261.63*Math.pow(2,s/12);
- const bars=[
-  {b:-12,a:[0,4,7,12,7,4],m:[[0,16],[3,19]]},
-  {b:-15,a:[-3,0,4,9,4,0],m:[[0,16],[3,12]]},
-  {b:-19,a:[-7,-3,0,5,0,-3],m:[[0,17],[3,12]]},
-  {b:-17,a:[-5,-1,2,7,2,-1],m:[[0,14],[3,19]]}
+ /* reverb suave con respuesta al impulso sintética */
+ const len=c.sampleRate*4,ir=c.createBuffer(2,len,c.sampleRate);
+ for(let ch=0;ch<2;ch++){const d=ir.getChannelData(ch);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.6)}
+ const conv=c.createConvolver();conv.buffer=ir;
+ const lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2200;
+ const master=c.createGain();master.gain.value=1.5;
+ const dry=c.createGain();dry.gain.value=.7;
+ const wet=c.createGain();wet.gain.value=.6;
+ master.connect(lp);lp.connect(dry);dry.connect(c.destination);
+ lp.connect(conv);conv.connect(wet);wet.connect(c.destination);
+ const f=m=>440*Math.pow(2,(m-69)/12);
+ /* acordes lentos y notas sueltas al azar: pieza original, tranquila */
+ const chords=[
+  {b:41,p:[53,57,60,64],n:[72,76,69,79]},
+  {b:38,p:[50,53,57,64],n:[69,72,77,76]},
+  {b:46,p:[46,50,53,57],n:[74,69,77,72]},
+  {b:48,p:[48,55,60,64],n:[76,72,67,79]}
  ];
- const E=.4;
- function note(fr,t,dur,vol,type){
-  const o=c.createOscillator(),g=c.createGain();o.type=type;o.frequency.value=fr;
-  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol,t+.015);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
-  o.connect(g);g.connect(master);o.start(t);o.stop(t+dur+.05);
+ const CH=8;
+ function tone(m,t,att,dur,vol,det){
+  const o=c.createOscillator(),g=c.createGain();o.type='sine';o.frequency.value=f(m);if(det)o.detune.value=det;
+  g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(vol,t+att);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.connect(g);g.connect(master);o.start(t);o.stop(t+dur+.1);
  }
- let bar=0,next=c.currentTime+.3;
+ let k=0,next=c.currentTime+.3;
  function sched(){
-  while(next<c.currentTime+2){
-   const B=bars[bar%4];
-   note(f(B.b),next,2.2,.09,'sine');
-   B.a.forEach((s,i)=>note(f(s),next+i*E,1.1,.045,'triangle'));
-   B.m.forEach(([st,s])=>note(f(s),next+st*E,1.8,.05,'sine'));
-   next+=6*E;bar++;
+  while(next<c.currentTime+3){
+   const C=chords[k%4];
+   tone(C.b,next,2,CH+2,.07);
+   C.p.forEach(m=>{tone(m,next,2.5,CH+1,.032);tone(m,next,2.5,CH+1,.026,7)});
+   let t=next+1+Math.random()*1.4;
+   while(t<next+CH-1){tone(C.n[Math.random()*4|0],t,.03,3.4,.05);t+=1.7+Math.random()*2.3}
+   next+=CH;k++;
   }
  }
- sched();setInterval(sched,400);
+ sched();setInterval(sched,500);
  const btn=$('#snd');let muted=false;
  btn.onclick=()=>{muted=!muted;if(muted)c.suspend();else c.resume();btn.textContent=muted?'🔇':'🔊'};
  document.addEventListener('visibilitychange',()=>{if(document.hidden)c.suspend();else if(!muted)c.resume()});
@@ -266,7 +283,7 @@ function build(m,urls){
    const diff=Math.round((new Date(y2,m2-1,d2)-new Date(n0.getFullYear(),n0.getMonth(),n0.getDate()))/864e5);
    const when=diff===1?'Mañana':diff<=0?'Hoy':'El '+d2+' de '+MES[m2-1];
    $('#rd').style.display='none';
-   $('#rev').innerHTML='<h4 class="script">¡Eso es! 🍇</h4><p>'+when+' '+esc(m.reveal)+'</p>';
+   $('#rev').innerHTML='<h4 class="script">¡Eso es! ✨</h4><p>'+when+' '+esc(m.reveal)+'</p>';
    confetti();$('#rev').scrollIntoView({behavior:'smooth',block:'center'});
    return;
   }
