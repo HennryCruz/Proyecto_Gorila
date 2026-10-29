@@ -68,7 +68,15 @@ section{min-height:100svh;display:flex;flex-direction:column;align-items:center;
 
 .letter{max-width:560px}
 .letter h3{font-size:2.2rem;color:var(--gold);margin-bottom:22px}
-.letter p{font-size:1.2rem;line-height:1.75;min-height:12em;text-align:left;white-space:pre-wrap}
+#lt{font-size:1.2rem;line-height:1.75;text-align:left;white-space:pre-wrap}
+.riddle{margin-top:26px;padding:20px;border-radius:18px;background:rgba(255,255,255,.08)}
+.riddle .rq{white-space:pre-line;font-size:1.12rem;line-height:1.7;margin:0 0 16px}
+.riddle input{width:100%;padding:13px 16px;border-radius:14px;border:2px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;font:600 1.05rem 'Quicksand',sans-serif;text-align:center;outline:none}
+.riddle input:focus{border-color:var(--rose)}
+#rm{min-height:24px;margin-top:10px;color:#ffd9a0;font-weight:600}
+.reveal h4{font-size:2.2rem;color:var(--gold);margin-top:22px}
+.reveal p{margin-top:10px;font-size:1.25rem;line-height:1.6}
+.snd{position:fixed;top:12px;right:12px;z-index:35;width:42px;height:42px;border-radius:50%;border:0;background:rgba(0,0,0,.35);color:#fff;font-size:1.2rem;cursor:pointer;backdrop-filter:blur(6px)}
 .letter .btn{max-width:300px;margin:28px auto 0;display:none}
 .finale{display:none;margin-top:30px}
 .finale h4{font-size:clamp(2rem,9vw,3.2rem);color:var(--blush);line-height:1.25}
@@ -99,6 +107,7 @@ section{min-height:100svh;display:flex;flex-direction:column;align-items:center;
 
 <div id="story">
   <div id="bar"></div>
+  <button id="snd" class="snd" aria-label="Música">🔊</button>
   <div id="bgA"></div><div id="bgB"></div>
   <canvas id="fx"></canvas>
   <main id="main"></main>
@@ -127,6 +136,7 @@ $('#f').addEventListener('submit',async e=>{
  const pw=$('#pw').value.replace(/\D/g,'');
  const btn=$('#go'),err=$('#err');
  err.textContent='';btn.disabled=true;btn.textContent='Abriendo…';
+ const aud=makeAudio();
  try{
   const m=new Uint8Array(await (await fetch('d/m.bin')).arrayBuffer());
   const key=await deriveKey(pw,m.slice(0,16));
@@ -140,10 +150,12 @@ $('#f').addEventListener('submit',async e=>{
     return URL.createObjectURL(new Blob([await dec(key,u)],{type:'image/jpeg'}));
   }));
   build(man,urls);
+  startMusic(aud);
   $('#loader').style.display='none';
   $('#gate').remove();
   window.scrollTo(0,0);
  }catch(x){
+  if(aud)aud.close();
   btn.disabled=false;btn.textContent='Abrir 💖';
   err.textContent=x==='bad'?'Mmm, esa no es 😅 inténtalo otra vez':'No se pudo abrir, revisa tu conexión';
   const c=$('#card');c.classList.remove('shake');void c.offsetWidth;c.classList.add('shake');
@@ -151,6 +163,46 @@ $('#f').addEventListener('submit',async e=>{
 });
 
 function esc(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+const MES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+function fmt(s){const [yy,mm,dd]=s.split('-').map(Number);return dd+' de '+MES[mm-1]+' de '+yy}
+
+/* música: melodía original generada en el navegador */
+function makeAudio(){try{const AC=window.AudioContext||window.webkitAudioContext;const c=new AC();if(c.resume)c.resume();return c}catch(e){return null}}
+function startMusic(c){
+ if(!c)return;
+ const master=c.createGain();master.gain.value=.55;
+ const dl=c.createDelay(1);dl.delayTime.value=.36;
+ const fb=c.createGain();fb.gain.value=.4;
+ const wet=c.createGain();wet.gain.value=.32;
+ master.connect(c.destination);master.connect(dl);dl.connect(fb);fb.connect(dl);dl.connect(wet);wet.connect(c.destination);
+ const f=s=>261.63*Math.pow(2,s/12);
+ const bars=[
+  {b:-12,a:[0,4,7,12,7,4],m:[[0,16],[3,19]]},
+  {b:-15,a:[-3,0,4,9,4,0],m:[[0,16],[3,12]]},
+  {b:-19,a:[-7,-3,0,5,0,-3],m:[[0,17],[3,12]]},
+  {b:-17,a:[-5,-1,2,7,2,-1],m:[[0,14],[3,19]]}
+ ];
+ const E=.4;
+ function note(fr,t,dur,vol,type){
+  const o=c.createOscillator(),g=c.createGain();o.type=type;o.frequency.value=fr;
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol,t+.015);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.connect(g);g.connect(master);o.start(t);o.stop(t+dur+.05);
+ }
+ let bar=0,next=c.currentTime+.3;
+ function sched(){
+  while(next<c.currentTime+2){
+   const B=bars[bar%4];
+   note(f(B.b),next,2.2,.09,'sine');
+   B.a.forEach((s,i)=>note(f(s),next+i*E,1.1,.045,'triangle'));
+   B.m.forEach(([st,s])=>note(f(s),next+st*E,1.8,.05,'sine'));
+   next+=6*E;bar++;
+  }
+ }
+ sched();setInterval(sched,400);
+ const btn=$('#snd');let muted=false;
+ btn.onclick=()=>{muted=!muted;if(muted)c.suspend();else c.resume();btn.textContent=muted?'🔇':'🔊'};
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)c.suspend();else if(!muted)c.resume()});
+}
 
 function build(m,urls){
  document.title='Para '+m.name+' 💖';
@@ -159,9 +211,9 @@ function build(m,urls){
  let h=`<section class="hero rv c"><h2 class="script">${esc(m.heroTitle)}<span class="nm">${esc(m.name)}</span></h2><p>${esc(m.heroSub)}</p><div class="down">↓</div></section>`;
  h+=`<section class="count rv c"><div class="n" id="days">0</div><div class="l script">${esc(m.countLabel)}</div><div class="s">y lo que falta 💞</div></section>`;
  m.photos.forEach((p,i)=>{
-  h+=`<section class="scene" data-i="${i}"><figure class="polaroid rv ${fx[i%4]} t${i%2+1}"><img src="${urls[i]}" width="${p.w}" height="${p.h}" alt=""><figcaption><span class="k">${String(i+1).padStart(2,'0')} / ${m.photos.length}</span>${esc(p.c)}</figcaption></figure></section>`;
+  h+=`<section class="scene" data-i="${i}"><figure class="polaroid rv ${fx[i%4]} t${i%2+1}"><img src="${urls[i]}" width="${p.w}" height="${p.h}" alt=""><figcaption><span class="k">${fmt(p.d)}</span>${esc(p.c)}</figcaption></figure></section>`;
  });
- h+=`<section class="letter-s"><div class="letter rv c"><h3 class="script">${esc(m.letterTitle)}</h3><p id="lt"></p><button class="btn" id="gift">${esc(m.giftButton)}</button><div class="finale" id="fin"><h4 class="script">${esc(m.finale)}</h4><p>${esc(m.finaleSub)}</p></div></div></section>`;
+ h+=`<section class="letter-s"><div class="letter rv c"><h3 class="script">${esc(m.letterTitle)}</h3><p id="lt"></p><button class="btn" id="gift">${esc(m.giftButton)}</button><div class="finale" id="fin"><h4 class="script">${esc(m.finale)}</h4><p>${esc(m.finaleSub)}</p><div class="riddle" id="rd"><p class="rq">${esc(m.riddle)}</p><form id="rf" autocomplete="off"><input id="ra" placeholder="Tu respuesta…" aria-label="Respuesta"><button class="btn" type="submit">Resolver 🔍</button></form><div id="rm"></div></div><div class="reveal" id="rev"></div></div></div></section>`;
  main.innerHTML=h;
  $('#story').style.display='block';
 
@@ -191,11 +243,35 @@ function build(m,urls){
  addEventListener('scroll',()=>{const s=document.documentElement;$('#bar').style.width=(scrollY/(s.scrollHeight-innerHeight)*100)+'%'},{passive:true});
 
  /* carta con efecto de escritura */
- function typeLetter(t){const p=$('#lt');let i=0;
-  (function w(){p.textContent=t.slice(0,++i);if(i<t.length)setTimeout(w,28);else{const g=$('#gift');g.style.display='block'}})();}
+ function typeLetter(t){
+  const p=$('#lt');let i=0,done=false;
+  const show=n=>{p.innerHTML=esc(t.slice(0,n))+'<span style="visibility:hidden">'+esc(t.slice(n))+'</span>'};
+  const fin=()=>{done=true;show(t.length);$('#gift').style.display='block'};
+  p.addEventListener('click',()=>{if(!done)fin()});
+  (function w(){if(done)return;show(++i);if(i<t.length)setTimeout(w,20);else fin()})();
+ }
  $('#gift').addEventListener('click',()=>{
   $('#gift').style.display='none';$('#fin').style.display='block';confetti();
   $('#fin').scrollIntoView({behavior:'smooth',block:'center'});
+ });
+
+ /* acertijo */
+ const norm=s=>s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');
+ let tries=0;
+ $('#rf').addEventListener('submit',e=>{
+  e.preventDefault();
+  const raw=norm($('#ra').value),a=raw.replace(/^(las|la|unas|una)(?=.)/,''),rm=$('#rm');
+  if((m.answers||[]).includes(a)){
+   const [y2,m2,d2]=m.tripDate.split('-').map(Number),n0=new Date();
+   const diff=Math.round((new Date(y2,m2-1,d2)-new Date(n0.getFullYear(),n0.getMonth(),n0.getDate()))/864e5);
+   const when=diff===1?'Mañana':diff<=0?'Hoy':'El '+d2+' de '+MES[m2-1];
+   $('#rd').style.display='none';
+   $('#rev').innerHTML='<h4 class="script">¡Eso es! 🍇</h4><p>'+when+' '+esc(m.reveal)+'</p>';
+   confetti();$('#rev').scrollIntoView({behavior:'smooth',block:'center'});
+   return;
+  }
+  tries++;
+  rm.textContent=(raw.includes('vino')?m.warm:m.wrong)+(tries>=2?'  '+m.hint:'');
  });
 }
 
