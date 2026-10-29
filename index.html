@@ -180,39 +180,56 @@ function fmt(s){const [yy,mm,dd]=s.split('-').map(Number);return dd+' de '+MES[m
 function makeAudio(){try{const AC=window.AudioContext||window.webkitAudioContext;const c=new AC();if(c.resume)c.resume();return c}catch(e){return null}}
 function startMusic(c){
  if(!c)return;
- /* reverb suave con respuesta al impulso sintética */
- const len=c.sampleRate*4,ir=c.createBuffer(2,len,c.sampleRate);
- for(let ch=0;ch<2;ch++){const d=ir.getChannelData(ch);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.6)}
+ /* reverb de sala suave */
+ const len=c.sampleRate*3,ir=c.createBuffer(2,len,c.sampleRate);
+ for(let ch=0;ch<2;ch++){const d=ir.getChannelData(ch);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.4)}
  const conv=c.createConvolver();conv.buffer=ir;
- const lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2200;
- const master=c.createGain();master.gain.value=1.5;
- const dry=c.createGain();dry.gain.value=.7;
- const wet=c.createGain();wet.gain.value=.6;
+ const lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=3200;
+ const master=c.createGain();master.gain.value=1;
+ const dry=c.createGain();dry.gain.value=.8;
+ const wet=c.createGain();wet.gain.value=.4;
  master.connect(lp);lp.connect(dry);dry.connect(c.destination);
  lp.connect(conv);conv.connect(wet);wet.connect(c.destination);
+ /* timbre tipo piano suave */
+ const wave=c.createPeriodicWave(new Float32Array(5),new Float32Array([0,1,.42,.16,.06]));
  const f=m=>440*Math.pow(2,(m-69)/12);
- /* acordes lentos y notas sueltas al azar: pieza original, tranquila */
- const chords=[
-  {b:41,p:[53,57,60,64],n:[72,76,69,79]},
-  {b:38,p:[50,53,57,64],n:[69,72,77,76]},
-  {b:46,p:[46,50,53,57],n:[74,69,77,72]},
-  {b:48,p:[48,55,60,64],n:[76,72,67,79]}
+ const E=.4545,B=E*2;
+ /* progresión: C · G/B · Am · Em/G · F · C/E · Dm7 · G  (bajo + 3 notas del acorde) */
+ const chords=[[48,55,60,64],[47,55,59,62],[45,52,57,60],[43,52,59,64],[41,53,57,60],[40,55,60,64],[38,53,57,60],[43,50,55,59]];
+ /* melodía original: [tiempo, nota MIDI, duración en tiempos] */
+ const mel=[
+  [[0,76,1.5],[1.5,74,.5],[2,72,1],[3,67,1]],
+  [[0,71,1.5],[1.5,74,.5],[2,79,2]],
+  [[0,81,1.5],[1.5,79,.5],[2,76,1],[3,72,1]],
+  [[0,76,2],[2,74,1],[3,76,1]],
+  [[0,77,1.5],[1.5,76,.5],[2,72,1],[3,69,1]],
+  [[0,72,1.5],[1.5,76,.5],[2,79,2]],
+  [[0,77,1.5],[1.5,76,.5],[2,74,1],[3,72,1]],
+  [[0,74,2],[2,71,1],[3,67,1]]
  ];
- const CH=8;
- function tone(m,t,att,dur,vol,det){
-  const o=c.createOscillator(),g=c.createGain();o.type='sine';o.frequency.value=f(m);if(det)o.detune.value=det;
-  g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(vol,t+att);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
-  o.connect(g);g.connect(master);o.start(t);o.stop(t+dur+.1);
+ const arp=[0,1,2,3,2,3,2,1];
+ function note(m,t,dur,vol){
+  t+=(Math.random()-.5)*.02;
+  const o=c.createOscillator(),g=c.createGain();o.setPeriodicWave(wave);o.frequency.value=f(m);
+  g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(vol,t+.01);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.connect(g);g.connect(master);o.start(t);o.stop(t+dur+.05);
  }
- let k=0,next=c.currentTime+.3;
+ function pad(m,t,dur,vol){
+  const o=c.createOscillator(),g=c.createGain();o.type='sine';o.frequency.value=f(m);
+  g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(vol,t+1.2);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.connect(g);g.connect(master);o.start(t);o.stop(t+dur+.05);
+ }
+ let k=0,next=c.currentTime+.4;
  function sched(){
   while(next<c.currentTime+3){
-   const C=chords[k%4];
-   tone(C.b,next,2,CH+2,.07);
-   C.p.forEach(m=>{tone(m,next,2.5,CH+1,.032);tone(m,next,2.5,CH+1,.026,7)});
-   let t=next+1+Math.random()*1.4;
-   while(t<next+CH-1){tone(C.n[Math.random()*4|0],t,.03,3.4,.05);t+=1.7+Math.random()*2.3}
-   next+=CH;k++;
+   const i=k%8,ch=chords[i],second=Math.floor(k/8)%2===1;
+   arp.forEach((a,j)=>note(ch[a],next+j*E,a===0?2.2:1.4,a===0?.07:.04));
+   ch.slice(1).forEach(m=>pad(m,next,B*4+.8,.012));
+   mel[i].forEach(([b,m,d])=>{
+    note(m,next+b*B,d*B*1.2+1.4,.12);
+    if(second)note(m-12,next+b*B,d*B*1.2+1.2,.045);
+   });
+   next+=8*E;k++;
   }
  }
  sched();setInterval(sched,500);
