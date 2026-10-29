@@ -135,7 +135,7 @@ $('#f').addEventListener('submit',async e=>{
  err.textContent='';btn.disabled=true;btn.textContent='Abriendo…';
  const aud=makeAudio();
  try{
-  const m=new Uint8Array(await (await fetch('d/m.bin')).arrayBuffer());
+  const m=new Uint8Array(await (await fetch('d/m.bin',{cache:'no-store'})).arrayBuffer());
   const key=await deriveKey(pw,m.slice(0,16));
   let man;
   try{man=JSON.parse(new TextDecoder().decode(await dec(key,m.slice(16))))}
@@ -143,7 +143,7 @@ $('#f').addEventListener('submit',async e=>{
   $('#gate').classList.add('out');
   $('#loader').style.display='flex';
   const urls=await Promise.all(man.photos.map(async(p,i)=>{
-    const u=new Uint8Array(await (await fetch('d/i/'+String(i).padStart(2,'0')+'.bin')).arrayBuffer());
+    const u=new Uint8Array(await (await fetch('d/i/'+String(i).padStart(2,'0')+'.bin',{cache:'no-store'})).arrayBuffer());
     return URL.createObjectURL(new Blob([await dec(key,u)],{type:'image/jpeg'}));
   }));
   build(man,urls);
