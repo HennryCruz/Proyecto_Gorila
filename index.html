@@ -171,6 +171,7 @@ $('#f').addEventListener('submit',async e=>{
   window.scrollTo(0,0);
  }catch(x){
   if(aud)aud.close();
+  $('#loader').style.display='none';$('#gate').classList.remove('out');
   btn.disabled=false;btn.textContent='Abrir 💖';
   err.textContent=x==='bad'?'Mmm, esa no es 😅 inténtalo otra vez':'No se pudo abrir, revisa tu conexión';
   const c=$('#card');c.classList.remove('shake');void c.offsetWidth;c.classList.add('shake');
